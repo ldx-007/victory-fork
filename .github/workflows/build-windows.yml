@@ -1,0 +1,71 @@
+# victory-fork ships no launcher and no build, and the PC this is played on
+# has no Rust toolchain, so the exe is made on GitHub's runners: Actions /
+# "Build victory-fork for Windows" / Run workflow, then unpack -
+#   target\diag\victory.exe      from victory-fork-windows-x64-diag
+#   target\release\victory.exe   from victory-fork-windows-x64-release
+# into the checkout, keeping the folder names.  E:\AI\ldx-007\play-victoryfork.bat
+# runs the first of them.
+#
+# Both are built because the README's numbers are measured with the
+# diagnostics build (it is what the frame log, the frame capture and the
+# debug layer need), while a plain release build is smaller and a little
+# faster; play-victoryfork.bat takes either, 'release' picks the second.
+#
+# This one file is the only thing the fork's main branch has that upstream
+# (github.com/fxceless/victory-fork) does not: merging upstream again keeps it.
+
+name: Build victory-fork for Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      # The version and components pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: victory-fork
+      # The build the README measures with, and the one the launcher uses.
+      - name: Build, diagnostics profile
+        run: cargo build --locked --profile diag -p victory --features diagnostics
+      - name: Build, release profile
+        run: cargo build --locked --release -p victory
+      - name: What made these
+        shell: pwsh
+        run: |
+          $info = (cargo --version) + ' / ' + (rustc --version) + ' / ' + (git rev-parse --short HEAD)
+          foreach ($d in 'diag', 'release') {
+              $info | Set-Content -Encoding ascii -Path ('target/' + $d + '/built-with.txt')
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: victory-fork-windows-x64-diag
+          path: |
+            target/diag/victory.exe
+            target/diag/built-with.txt
+            target/diag/*.pdb
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: victory-fork-windows-x64-release
+          path: |
+            target/release/victory.exe
+            target/release/built-with.txt
+          if-no-files-found: error
+          retention-days: 30
